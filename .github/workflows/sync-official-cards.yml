@@ -1,0 +1,64 @@
+name: Sync official cards and publish lab
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every Monday, 10:17 AM Taiwan time (scheduled runs may be delayed).
+    - cron: '17 2 * * 1'
+  push:
+    branches: [main]
+    paths-ignore:
+      - official-cards-data.js
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: lab-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install requests
+      - name: Fetch official data
+        id: sync
+        continue-on-error: true
+        run: python scripts/sync_official_cards.py
+      - name: Keep the previous data if synchronization fails
+        if: steps.sync.outcome == 'failure'
+        run: |
+          git checkout -- official-cards-data.js
+          echo '::warning::Official synchronization failed. Publishing the last saved dataset; no third-party fallback is used.'
+      - name: Save official data
+        if: steps.sync.outcome == 'success'
+        run: |
+          if ! git diff --quiet -- official-cards-data.js; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add official-cards-data.js
+            git commit -m 'Sync official card database [skip ci]'
+            git push
+          fi
+      - uses: actions/configure-pages@v5
+      - name: Prepare website
+        run: |
+          mkdir -p _site
+          rsync -a --exclude='.git/' --exclude='.github/' --exclude='scripts/' --exclude='_site/' ./ _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Publish website
+        id: deployment
+        uses: actions/deploy-pages@v4
