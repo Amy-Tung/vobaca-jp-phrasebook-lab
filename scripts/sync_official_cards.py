@@ -18,20 +18,20 @@ for page in range(1, 101):
         total = int(data.get('count', 0) or 0)
         if total <= 0:
             raise RuntimeError('Official count is missing or empty; previous data retained.')
-    items = data['items']
     before = len(items_by_id)
-    for item in items:
+    for item in data['items']:
         if isinstance(item, dict) and item.get('ID') is not None:
             items_by_id[str(item['ID'])] = item
     if len(items_by_id) >= total:
         break
-    if not items or len(items_by_id) == before:
-        raise RuntimeError('Incomplete or repeated official page; previous data retained.')
+    if not data['items'] or len(items_by_id) == before:
+        raise RuntimeError('Incomplete official data; previous data retained.')
     time.sleep(0.6)
 else:
-    raise RuntimeError('Official pagination limit exceeded; previous data retained.')
-cards = [{k: x.get(k, '') for k in ('ID', 'card_no', 'name', 'name_ruby', 'affiliation', 'category')} for x in items_by_id.values()]
-if not any(c['category'] == 'CHARACTER' and c['name'] for c in cards):
+    raise RuntimeError('Pagination limit exceeded; previous data retained.')
+# Preserve official metadata, including position and card subtype; do not infer it.
+cards = list(items_by_id.values())
+if not any(c.get('category') == 'CHARACTER' and c.get('name') for c in cards):
     raise RuntimeError('No character cards found; previous data retained.')
 path = Path('official-cards-data.js')
 if path.exists():
@@ -43,8 +43,7 @@ if path.exists():
     except (ValueError, IndexError):
         pass
 payload = {'source': API, 'updatedAt': datetime.now(timezone.utc).isoformat(), 'count': len(cards), 'cards': cards}
-content = 'window.OFFICIAL_CARDS_DATA=' + json.dumps(payload, ensure_ascii=False, separators=(',', ':')) + ';\n'
 temporary = path.with_suffix('.tmp')
-temporary.write_text(content, encoding='utf-8')
+temporary.write_text('window.OFFICIAL_CARDS_DATA=' + json.dumps(payload, ensure_ascii=False, separators=(',', ':')) + ';\n', encoding='utf-8')
 temporary.replace(path)
-print(f'Saved {len(cards)} official card variants from {page} page(s).')
+print(f'Saved {len(cards)} official cards from {page} page(s).')
