@@ -1,29 +1,50 @@
-import json,time
-from datetime import datetime,timezone
+import json
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 import requests
 
-API='https://www.takaratomy.co.jp/products/haikyuvobacabreak/cardlist/itemsearch.php'
-HEADERS={'User-Agent':'Mozilla/5.0 (compatible; VobacaPhrasebook/1.0)','Referer':'https://www.takaratomy.co.jp/products/haikyuvobacabreak/cardlist/'}
-all_items=[]
-page=1
-total=None
-while True:
-    response=requests.get(API,params={'p':page},headers=HEADERS,timeout=30)
+API = 'https://www.takaratomy.co.jp/products/haikyuvobacabreak/cardlist/itemsearch.php'
+HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; VobacaPhrasebook/1.0)', 'Referer': 'https://www.takaratomy.co.jp/products/haikyuvobacabreak/cardlist/'}
+items_by_id = {}
+total = None
+for page in range(1, 101):
+    response = requests.get(API, params={'p': page}, headers=HEADERS, timeout=30)
     response.raise_for_status()
-    data=response.json()
-    items=data.get('items',[])
-    if total is None: total=int(data.get('count',0) or 0)
-    if not items: break
-    all_items.extend(items)
-    if total and len(all_items)>=total: break
-    page+=1
-    time.sleep(.4)
-unique={str(x.get('ID')):x for x in all_items if x.get('ID') is not None}
-cards=[]
-for x in unique.values():
-    cards.append({k:x.get(k,'') for k in ('ID','card_no','name','name_ruby','affiliation','category')})
-payload={'source':API,'updatedAt':datetime.now(timezone.utc).isoformat(),'count':len(cards),'cards':cards}
-out='window.OFFICIAL_CARDS_DATA='+json.dumps(payload,ensure_ascii=False,separators=(',',':'))+';\n'
-Path('official-cards-data.js').write_text(out,encoding='utf-8')
-print(f'wrote {len(cards)} official card variants from {page} page(s)')
+    data = response.json()
+    if not isinstance(data, dict) or not isinstance(data.get('items'), list):
+        raise RuntimeError('Unexpected official response; previous data retained.')
+    if total is None:
+        total = int(data.get('count', 0) or 0)
+        if total <= 0:
+            raise RuntimeError('Official count is missing or empty; previous data retained.')
+    items = data['items']
+    before = len(items_by_id)
+    for item in items:
+        if isinstance(item, dict) and item.get('ID') is not None:
+            items_by_id[str(item['ID'])] = item
+    if len(items_by_id) >= total:
+        break
+    if not items or len(items_by_id) == before:
+        raise RuntimeError('Incomplete or repeated official page; previous data retained.')
+    time.sleep(0.6)
+else:
+    raise RuntimeError('Official pagination limit exceeded; previous data retained.')
+cards = [{k: x.get(k, '') for k in ('ID', 'card_no', 'name', 'name_ruby', 'affiliation', 'category')} for x in items_by_id.values()]
+if not any(c['category'] == 'CHARACTER' and c['name'] for c in cards):
+    raise RuntimeError('No character cards found; previous data retained.')
+path = Path('official-cards-data.js')
+if path.exists():
+    try:
+        previous = json.loads(path.read_text(encoding='utf-8').split('=', 1)[1].rstrip().rstrip(';'))
+        if previous.get('cards') == cards:
+            print('Official data unchanged.')
+            raise SystemExit(0)
+    except (ValueError, IndexError):
+        pass
+payload = {'source': API, 'updatedAt': datetime.now(timezone.utc).isoformat(), 'count': len(cards), 'cards': cards}
+content = 'window.OFFICIAL_CARDS_DATA=' + json.dumps(payload, ensure_ascii=False, separators=(',', ':')) + ';\n'
+temporary = path.with_suffix('.tmp')
+temporary.write_text(content, encoding='utf-8')
+temporary.replace(path)
+print(f'Saved {len(cards)} official card variants from {page} page(s).')
