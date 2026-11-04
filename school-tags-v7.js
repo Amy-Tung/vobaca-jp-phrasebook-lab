@@ -1,0 +1,6 @@
+(()=>{
+'use strict';
+const style=document.createElement('style');style.textContent=`.character-school-tags{display:flex;flex-wrap:wrap;align-items:flex-start;gap:5px;padding-right:126px;min-height:38px;margin:0 0 10px}.character-school-tags .tag{position:static;display:inline-flex;max-width:100%;white-space:normal;overflow-wrap:anywhere;margin:0}.character-card .character-name{padding-top:0;margin-top:0}.character-school-tags+.character-name{margin-top:0}@media print{.character-school-tags{padding-right:0;min-height:0;margin-bottom:7px}.character-school-tags .tag{font-size:10px}}`;document.head.appendChild(style);
+function upgrade(root){root.querySelectorAll('.character-card').forEach(card=>{const info=card.querySelector('.character-metadata');if(!info)return;const schools=(info.querySelector('dd')?.textContent||'').split('／').filter(Boolean);const tags=document.createElement('div');tags.className='character-school-tags';tags.setAttribute('aria-label','所屬學校');for(const school of schools){const tag=document.createElement('span');tag.className='tag';tag.textContent=school;tags.append(tag)}card.querySelector('.character-name').before(tags);info.remove()})}
+for(const id of ['characterGrid','catalogMainGrid']){const root=document.getElementById(id);if(root){upgrade(root);new MutationObserver(()=>upgrade(root)).observe(root,{childList:true})}}
+})();
